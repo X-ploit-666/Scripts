@@ -1,0 +1,48 @@
+#!/usr/bin/bash
+
+source colors.sh
+
+
+banner_text=$(toilet --gay "X-ploit")
+echo -e "$banner_text"
+echo ""
+# Checks
+if [[ $# -ne 1 || ! -f $1 ]]; then
+    echo -e "${red}[!] Usage${reset}\n$0 <domains-file.txt>"
+    exit 1
+fi 
+
+input=$1
+
+## Gatheer JSUrls
+echo -e "${yellow}[+]${green} Gathering JS Links From Targets...${reset}"
+cat $input | gau | grep ".js$" | uniq | sort >> jsfile_links.txt
+cat $input | subjs  >> jsfile_links.txt
+count=$(wc -l jsfile_links.txt)
+echo -e ${yellow}[+]${green} $count JS Links Gathered and saved in jsfile_links.txt${reset}
+echo ""
+# Check Live JSUrls
+echo -e "${yellow}[+]${green} Checking live JS Links...${reset}"
+cat jsfile_links.txt | hakcheckurl | grep "200" | cut -d" " -f2 | sort -u > live_jsfile_links.txt
+count2=$(wc -l live_jsfile_links.txt)
+echo -e "${yellow}[+]${green} $count2 Live JS Links saved in live_jsfile_links.txt${reset}"
+echo ""
+# Extract Endpoints
+echo -e "${yellow}[+]${green} Extracting Endpoints from Live JS Links...${reset}"
+cat live_jsfile_links.txt | while read url; do python3 /home/x-ploit/Tools/LinkFinder/linkfinder.py -d -i $url -o cli; done > endpoints.txt
+count3=$(wc -l endpoints.txt)
+echo -e "${yellow}[+]${green} $count3 Endpoints extracted and saved in endpoints.txt${reset}"
+echo ""
+# Gathering Secrets From Js Files
+cat live_jsfile_links.txt | while read url; do python3 /home/x-ploit/Tools/secretfinder/SecretFinder.py -i $url -o cli >> jslinksecret.txt; done
+echo ""
+echo ""
+summary=$(figlet -f script "Summary")
+echo -e "${red}$summary${reset}"
+echo ""
+echo -e "${yellow}jsfile_links.txt${reset} ---> ${green}contain $count gathered jsfilelinks${reset}"
+echo -e "${yellow}live_jsfile_links.txt${reset} ---> ${green}contain $count2 live jsfilelinks${reset}"
+echo -e "${yellow}endpoints.txt${reset} ---> ${green}contain $count3 extracted endpoints from live jsfilelinks${reset}"
+ehco -e "${yellow}jslinksecret.txt${reset} ---> ${green}contain Secrets Extracted From Js Files"
+echo ""
+echo -e "${red}Happy Hunting...!!!${reset}"

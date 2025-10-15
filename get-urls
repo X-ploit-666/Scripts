@@ -1,0 +1,91 @@
+#!/usr/bin/bash
+
+source colors.sh
+
+
+banner_text=$(toilet --center "X-ploit-666")
+echo -e "$banner_text"
+echo ""
+# Checks
+if [[ $# -ne 1 || ! -f $1 ]]; then
+    echo -e "${red}[!] Usage${reset}\n$0 <domains-file.txt>"
+    exit 1
+fi 
+
+input=$1
+
+## Gatheer URls 
+echo -e "${yellow}[+]${green} Gathering Links From Targets...${reset}"
+
+## Gathering URLS From waybackurls
+echo -e "${yellow}[+]${green} Gathering URLs From waybackurls...${reset}"
+waybackurls < "$input" 2>/dev/null | anew way.txt >/dev/null
+count1=$(wc -l < way.txt)
+echo -e "${yellow}[+]${green} $count1 URLs Gathered and saved in way.txt${reset}"
+echo ""
+
+## Additianl 
+## Gathering URLS From gau
+echo -e "${yellow}[+]${green} Gathering URLs From gau...${reset}"
+( gau < "$input" 2>/dev/null | anew gau.txt ) >/dev/null 2>&1
+count2=$(wc -l < gau.txt)
+echo -e "${yellow}[+]${green} $count2 URLs Gathered and saved in gau.txt${reset}"
+echo ""
+
+## Gathering URLS From katana
+echo -e "${yellow}[+]${green} Gathering URLs From katana...${reset}"
+katana < "$input" 2>/dev/null | anew katana.txt >/dev/null
+count3=$(wc -l < katana.txt)
+echo -e "${yellow}[+]${green} $count3 URLs Gathered and saved in katana.txt${reset}"
+echo ""
+
+## Combining All URLs
+echo -e "${yellow}[+]${green} Combining All Gathered URLs...${reset}"
+cat way.txt gau.txt katana.txt | sort -u | anew all_urls.txt >/dev/null
+count4=$(wc -l < all_urls.txt)
+echo -e "${yellow}[+]${green} $count4 Unique URLs saved in all_urls.txt${reset}"
+echo ""
+
+## Checking for live URLs:
+echo -e "${yellow}[+]${green} Checking for Live URLs...${reset}"
+cat all_urls.txt | hakcheckurl | grep "200" | cut -d" " -f2 | sort -u > live_allurls.txt
+live_count=$(wc -l < live_allurls.txt)
+echo -e "${yellow}[+]${green} $live_count Live URLs saved in live_allurls.txt${reset}"
+echo ""
+
+## Extracting All live JS links:
+grep ".js$" live_allurls.txt > live_js_links.txt
+echo -e "${yellow}[+]${green} Extracting JS Links from Live URLs...${reset}"
+js_count=$(wc -l < live_js_links.txt)
+echo -e "${yellow}[+]${green} $js_count JS Links extracted and saved in live_js_links.txt${reset}"
+echo ""
+
+## Extracting Endpoints from Live JS Links
+echo -e "${yellow}[+]${green} Extracting Endpoints from Live JS Links...${reset}"
+cat live_js_links.txt | while read url; do python3 /home/x-ploit/Tools/LinkFinder/linkfinder.py -d -i $url -o cli; done > endpoints.txt
+count5=$(wc -l < endpoints.txt)
+echo -e "${yellow}[+]${green} $count5 Endpoints extracted and saved in endpoints.txt${reset}"
+echo ""
+
+## Gathering Secrets From Js Files
+echo -e "${yellow}[+]${green} Gathering Secrets From Live JS Links...${reset}"
+cat live_js_links.txt | while read url; do python3 /home/x-ploit/Tools/secretfinder/SecretFinder.py -i $url -o cli >> jslinksecret.txt; done
+echo -e "${yellow}[+]${green} Secrets extracted and saved in jslinksecret.txt${reset}"
+echo ""
+echo ""
+
+## Summary
+summary=$(figlet -f script "Summary")
+echo -e "${red}$summary${reset}"
+echo ""
+echo -e "${yellow}way.txt${reset} ---> ${green}contain $count1 gathered urls from waybackurls${reset}"
+echo -e "${yellow}gau.txt${reset} ---> ${green}contain $count2 gathered urls from gau${reset}"
+echo -e "${yellow}katana.txt${reset} ---> ${green}contain $count3 gathered urls from katana${reset}"
+echo -e "${yellow}all_urls.txt${reset} ---> ${green}contain $count4 unique urls from all tools${reset}"
+echo -e "${yellow}live_allurls.txt${reset} ---> ${green}contain $live_count live urls from all gathered urls${reset}"
+echo -e "${yellow}live_js_links.txt${reset} ---> ${green}contain $js_count live js links extracted from live urls${reset}"
+echo -e "${yellow}endpoints.txt${reset} ---> ${green}contain $count5 extracted endpoints from live js links${reset}"
+echo -e "${yellow}jslinksecret.txt${reset} ---> ${green}contain Secrets Extracted From Js Files${reset}"    
+echo "" 
+
+echo -e "${red}Happy Hunting...!!!${reset}"
