@@ -1,4 +1,5 @@
 ## get-urls
+> Automated URL discovery and XSS reconnaissance pipeline using waybackurls, gau, httpx, katana, Gxss, kxss, uro, and Dalfox.
 
 # X-ploit URL Recon Pipeline
 
@@ -44,16 +45,15 @@ T --> U[dalfox_results.txt]
 
 ## Files Generated
 
-| File | Description | Lines |
-|------|-------------|------:|
-| `way.txt` | URLs from waybackurls | 22371 |
-| `gau.txt` | URLs from gau | 10542 |
-| `all_urls.txt` | Unique URLs from waybackurls + gau | 22371 |
-| `scoped_urls.txt` | URLs filtered to target scope | 22338 |
-| `live_allurls.txt` | Live URLs after httpx | 13379 |
-| `katana.txt` | URLs discovered by Katana crawling | 240093 |
-| `final.txt` | URLs ready for Dalfox | - |
-| `dalfox_results.txt` | XSS scan results | - |
+| File | Description |
+|------|-------------|
+| `way.txt` | First stage - URLs gathered from waybackurls |
+| `gau.txt` | Second stage - URLs gathered from gau |
+| `all_urls.txt` | Merge of way.txt + gau.txt (unique URLs) |
+| `scoped_urls.txt` | URLs filtered to only targets inside scope |
+| `live_allurls.txt` | Alive URLs after httpx check |
+| `katana.txt` | New URLs discovered by Katana crawling |
+| `live_allurls.txt` | Final live URL list after merging Katana results |
 
 ## Pipeline
 
