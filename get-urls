@@ -1,9 +1,9 @@
 #!/usr/bin/bash
+set -o pipefail
 
 source colors.sh
 
-
-banner_text=$(toilet --center "X-ploit-666")
+banner_text=$(toilet "X-ploit-666")
 echo -e "$banner_text"
 echo ""
 # Checks
@@ -14,12 +14,15 @@ fi
 
 input=$1
 
+rm -f way.txt gau.txt katana.txt all_urls.txt scoped_urls.txt live_allurls.txt katana_merge.txt live_allurls_final.txt xss_output.txt final.txt dalfox_results.txt
+final_count=0
+
 ## Gatheer URls 
 echo -e "${yellow}[+]${green} Gathering Links From Targets...${reset}"
 
 ## Gathering URLS From waybackurls
 echo -e "${yellow}[+]${green} Gathering URLs From waybackurls...${reset}"
-waybackurls < "$input" 2>/dev/null | anew way.txt >/dev/null
+waybackurls < "$input" 2>/dev/null > way.txt
 count1=$(wc -l < way.txt)
 echo -e "${yellow}[+]${green} $count1 URLs Gathered and saved in way.txt${reset}"
 echo ""
@@ -27,51 +30,129 @@ echo ""
 ## Additianl 
 ## Gathering URLS From gau
 echo -e "${yellow}[+]${green} Gathering URLs From gau...${reset}"
-( gau < "$input" 2>/dev/null | anew gau.txt ) >/dev/null 2>&1
+gau < "$input" 2>/dev/null > gau.txt
 count2=$(wc -l < gau.txt)
 echo -e "${yellow}[+]${green} $count2 URLs Gathered and saved in gau.txt${reset}"
 echo ""
 
-## Gathering URLS From katana
-echo -e "${yellow}[+]${green} Gathering URLs From katana...${reset}"
-katana < "$input" 2>/dev/null | anew katana.txt >/dev/null
-count3=$(wc -l < katana.txt)
-echo -e "${yellow}[+]${green} $count3 URLs Gathered and saved in katana.txt${reset}"
-echo ""
 
 ## Combining All URLs
 echo -e "${yellow}[+]${green} Combining All Gathered URLs...${reset}"
-cat way.txt gau.txt katana.txt | sort -u | anew all_urls.txt >/dev/null
+cat way.txt gau.txt | sort -u > all_urls.txt
 count4=$(wc -l < all_urls.txt)
+
 echo -e "${yellow}[+]${green} $count4 Unique URLs saved in all_urls.txt${reset}"
+echo ""
+
+## Scope Filtering
+echo -e "${yellow}[+]${green} Filtering In-Scope URLs...${reset}"
+> scoped_urls.txt
+
+while read -r domain; do
+
+    # Skip empty lines and comments
+    [[ -z "$domain" ]] && continue
+    [[ "$domain" =~ ^# ]] && continue
+
+    # Remove protocol and trailing slash
+    domain=$(echo "$domain" | sed -E 's#https?://##; s#/.*##; s#/$##')
+    # Escape dots for regex safety
+    domain=$(echo "$domain" | sed 's/\./\\./g')
+
+    grep -E "https?://([a-zA-Z0-9-]+\.)*${domain}(/|$)" all_urls.txt >> scoped_urls.txt
+done < "$input"
+
+sort -u scoped_urls.txt -o scoped_urls.txt
+scope_count=$(wc -l < scoped_urls.txt)
+echo -e "${yellow}[+]${green} $scope_count URLs are in scope and saved in scoped_urls.txt${reset}"
+
 echo ""
 
 ## Checking for live URLs:
 echo -e "${yellow}[+]${green} Checking for Live URLs...${reset}"
-cat all_urls.txt | hakcheckurl | grep "200" | cut -d" " -f2 | sort -u > live_allurls.txt
+cat scoped_urls.txt \
+| httpx -silent -mc 200,301,302,307,308,401,403,429 \
+| sort -u > live_allurls.txt
 live_count=$(wc -l < live_allurls.txt)
 echo -e "${yellow}[+]${green} $live_count Live URLs saved in live_allurls.txt${reset}"
 echo ""
 
-## Extracting All live JS links:
-grep ".js$" live_allurls.txt > live_js_links.txt
-echo -e "${yellow}[+]${green} Extracting JS Links from Live URLs...${reset}"
-js_count=$(wc -l < live_js_links.txt)
-echo -e "${yellow}[+]${green} $js_count JS Links extracted and saved in live_js_links.txt${reset}"
+
+
+if [[ ! -s live_allurls.txt ]]; then
+    echo -e "${red}[-] No live URLs found.${reset}"
+    exit 0
+fi
+
+## Crawling Live URLs With Katana
+echo -e "${yellow}[+]${green} Crawling Live URLs With Katana...${reset}"
+katana -list live_allurls.txt -jc -d 3 -kf all -silent -o katana.txt 2>/dev/null
+#katana -list live_allurls.txt -jc -d 3 -kf all -silent -o katana.txt >/dev/null 2>&1  wont show in the terminal or error 
+if [[ -f katana.txt ]]; then
+    count3=$(wc -l < katana.txt)
+else
+    count3=0
+    touch katana.txt
+fi
+
+echo -e "${yellow}[+]${green} $count3 URLs Gathered and saved in katana.txt${reset}"
 echo ""
 
-## Extracting Endpoints from Live JS Links
-echo -e "${yellow}[+]${green} Extracting Endpoints from Live JS Links...${reset}"
-cat live_js_links.txt | while read url; do python3 /home/x-ploit/Tools/LinkFinder/linkfinder.py -d -i $url -o cli; done > endpoints.txt
-count5=$(wc -l < endpoints.txt)
-echo -e "${yellow}[+]${green} $count5 Endpoints extracted and saved in endpoints.txt${reset}"
+## Merge Katana URLs With Live URLs
+cat live_allurls.txt katana.txt | sort -u > katana_merge.txt
+
+> live_allurls_final.txt
+
+while read -r domain; do
+    [[ -z "$domain" ]] && continue
+    [[ "$domain" =~ ^# ]] && continue
+    domain=$(echo "$domain" | sed -E 's#https?://##; s#/.*##; s#/$##')
+    domain=$(echo "$domain" | sed 's/\./\\./g')
+    grep -E "https?://([a-zA-Z0-9-]+\.)*${domain}(/|$)" katana_merge.txt >> live_allurls_final.txt
+done < "$input"
+
+sort -u live_allurls_final.txt -o live_allurls.txt
+rm katana_merge.txt
+live_count=$(wc -l < live_allurls.txt)
+echo -e "${yellow}[+]${green} $live_count Total live URLs after Katana saved in live_allurls.txt${reset}"
 echo ""
 
-## Gathering Secrets From Js Files
-echo -e "${yellow}[+]${green} Gathering Secrets From Live JS Links...${reset}"
-cat live_js_links.txt | while read url; do python3 /home/x-ploit/Tools/secretfinder/SecretFinder.py -i $url -o cli >> jslinksecret.txt; done
-echo -e "${yellow}[+]${green} Secrets extracted and saved in jslinksecret.txt${reset}"
+## Preparing URLs for XSS
+echo -e "${yellow}[+]${green} Filtering URLs for XSS...${reset}"
+
+cat live_allurls.txt \
+| grep -Ev "\.(png|jpg|jpeg|gif|svg|css|woff|woff2|ico|pdf|zip|mp4|webp|map|ttf|eot|tar|gz|rar|7z)$" \
+| grep "=" \
+| uro \
+| sort -u \
+| Gxss \
+| kxss \
+> xss_output.txt
+
+if [ -s xss_output.txt ]; then
+    cat xss_output.txt \
+    | grep -oP 'https?://\S+' \
+    | qsreplace "" \
+    | sort -u > final.txt
+
+    final_count=$(wc -l < final.txt)
+
+    echo -e "${yellow}[+]${green} $final_count URLs ready for Dalfox saved in final.txt${reset}"
+else
+    echo -e "${red}[-] No reflected parameters found.${reset}"
+fi
+
 echo ""
+
+if [[ -s final.txt ]]; then
+    echo -e "${yellow}[+]${green} Starting Dalfox...${reset}"
+    dalfox file final.txt -o dalfox_results.txt --silence
+else
+    echo -e "${red}[-] No Dalfox targets found.${reset}"
+    exit 0
+fi
+
+
 echo ""
 
 ## Summary
@@ -81,11 +162,8 @@ echo ""
 echo -e "${yellow}way.txt${reset} ---> ${green}contain $count1 gathered urls from waybackurls${reset}"
 echo -e "${yellow}gau.txt${reset} ---> ${green}contain $count2 gathered urls from gau${reset}"
 echo -e "${yellow}katana.txt${reset} ---> ${green}contain $count3 gathered urls from katana${reset}"
-echo -e "${yellow}all_urls.txt${reset} ---> ${green}contain $count4 unique urls from all tools${reset}"
+echo -e "${yellow}all_urls.txt${reset} ---> ${green}contain $count4 unique URLs from waybackurls and gau${reset}"
 echo -e "${yellow}live_allurls.txt${reset} ---> ${green}contain $live_count live urls from all gathered urls${reset}"
-echo -e "${yellow}live_js_links.txt${reset} ---> ${green}contain $js_count live js links extracted from live urls${reset}"
-echo -e "${yellow}endpoints.txt${reset} ---> ${green}contain $count5 extracted endpoints from live js links${reset}"
-echo -e "${yellow}jslinksecret.txt${reset} ---> ${green}contain Secrets Extracted From Js Files${reset}"    
-echo "" 
+echo -e "${yellow}final.txt${reset} ---> ${green}contains $final_count Dalfox-ready URLs${reset}"
 
-echo -e "${red}Happy Hunting...!!!${reset}"
+echo ""
