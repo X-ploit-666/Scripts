@@ -14,7 +14,7 @@ fi
 
 input=$1
 
-rm -f way.txt gau.txt katana.txt all_urls.txt scoped_urls.txt live_allurls.txt katana_merge.txt live_allurls_final.txt xss_output.txt final.txt dalfox_results.txt
+rm -f wayback_urls.txt gau.txt katana.txt all_urls.txt scoped_urls.txt live_urls.txt final_live_urls.txt katana_merge.txt xss_output.txt dalfox_targets.txt dalfox_results.txt
 final_count=0
 
 ## Gatheer URls 
@@ -22,9 +22,9 @@ echo -e "${yellow}[+]${green} Gathering Links From Targets...${reset}"
 
 ## Gathering URLS From waybackurls
 echo -e "${yellow}[+]${green} Gathering URLs From waybackurls...${reset}"
-waybackurls < "$input" 2>/dev/null > way.txt
-count1=$(wc -l < way.txt)
-echo -e "${yellow}[+]${green} $count1 URLs Gathered and saved in way.txt${reset}"
+waybackurls < "$input" 2>/dev/null > wayback_urls.txt
+count1=$(wc -l < wayback_urls.txt)
+echo -e "${yellow}[+]${green} $count1 URLs Gathered and saved in wayback_urls.txt${reset}"
 echo ""
 
 ## Additianl 
@@ -38,7 +38,7 @@ echo ""
 
 ## Combining All URLs
 echo -e "${yellow}[+]${green} Combining All Gathered URLs...${reset}"
-cat way.txt gau.txt | sort -u > all_urls.txt
+cat wayback_urls.txt gau.txt | sort -u > all_urls.txt
 count4=$(wc -l < all_urls.txt)
 
 echo -e "${yellow}[+]${green} $count4 Unique URLs saved in all_urls.txt${reset}"
@@ -72,22 +72,22 @@ echo ""
 echo -e "${yellow}[+]${green} Checking for Live URLs...${reset}"
 cat scoped_urls.txt \
 | httpx -silent -mc 200,301,302,307,308,401,403,429 \
-| sort -u > live_allurls.txt
-live_count=$(wc -l < live_allurls.txt)
-echo -e "${yellow}[+]${green} $live_count Live URLs saved in live_allurls.txt${reset}"
+| sort -u > live_urls.txt
+live_count=$(wc -l < live_urls.txt)
+echo -e "${yellow}[+]${green} $live_count Live URLs saved in live_urls.txt${reset}"
 echo ""
 
 
 
-if [[ ! -s live_allurls.txt ]]; then
+if [[ ! -s live_urls.txt ]]; then
     echo -e "${red}[-] No live URLs found.${reset}"
     exit 0
 fi
 
 ## Crawling Live URLs With Katana
 echo -e "${yellow}[+]${green} Crawling Live URLs With Katana...${reset}"
-katana -list live_allurls.txt -jc -d 3 -kf all -silent -o katana.txt 2>/dev/null
-#katana -list live_allurls.txt -jc -d 3 -kf all -silent -o katana.txt >/dev/null 2>&1  wont show in the terminal or error 
+katana -list live_urls.txt -jc -d 3 -kf all -silent -o katana.txt 2>/dev/null
+#katana -list live_urls.txt -jc -d 3 -kf all -silent -o katana.txt >/dev/null 2>&1  wont show in the terminal or error 
 if [[ -f katana.txt ]]; then
     count3=$(wc -l < katana.txt)
 else
@@ -99,54 +99,54 @@ echo -e "${yellow}[+]${green} $count3 URLs Gathered and saved in katana.txt${res
 echo ""
 
 ## Merge Katana URLs With Live URLs
-cat live_allurls.txt katana.txt | sort -u > katana_merge.txt
+cat live_urls.txt katana.txt | sort -u > katana_merge.txt
 
-> live_allurls_final.txt
+> final_live_urls.txt
 
 while read -r domain; do
     [[ -z "$domain" ]] && continue
     [[ "$domain" =~ ^# ]] && continue
     domain=$(echo "$domain" | sed -E 's#https?://##; s#/.*##; s#/$##')
     domain=$(echo "$domain" | sed 's/\./\\./g')
-    grep -E "https?://([a-zA-Z0-9-]+\.)*${domain}(/|$)" katana_merge.txt >> live_allurls_final.txt
+    grep -E "https?://([a-zA-Z0-9-]+\.)*${domain}(/|$)" katana_merge.txt >> final_live_urls.txt
 done < "$input"
 
-sort -u live_allurls_final.txt -o live_allurls.txt
+sort -u final_live_urls.txt -o final_live_urls.txt
 rm katana_merge.txt
-live_count=$(wc -l < live_allurls.txt)
-echo -e "${yellow}[+]${green} $live_count Total live URLs after Katana saved in live_allurls.txt${reset}"
+live_count=$(wc -l < final_live_urls.txt)
+echo -e "${yellow}[+]${green} $live_count Total live URLs after Katana saved in final_live_urls.txt${reset}"
 echo ""
 
-## Preparing URLs for XSS
-echo -e "${yellow}[+]${green} Filtering URLs for XSS...${reset}"
 
-cat live_allurls.txt \
-| grep -Ev "\.(png|jpg|jpeg|gif|svg|css|woff|woff2|ico|pdf|zip|mp4|webp|map|ttf|eot|tar|gz|rar|7z)$" \
-| grep "=" \
+## Preparing URLs for XSS
+echo -e "${yellow}[+]${green} Preparing URLs for XSS...${reset}"
+
+> dalfox_targets.txt
+
+cat final_live_urls.txt \
+| gf xss \
 | uro \
 | sort -u \
 | Gxss \
 | kxss \
-> xss_output.txt
+| tee xss_output.txt
+
 
 if [ -s xss_output.txt ]; then
-    cat xss_output.txt \
-    | grep -oP 'https?://\S+' \
-    | qsreplace "" \
-    | sort -u > final.txt
+    grep -oP 'https?://\S+' xss_output.txt \
+    | sed 's/=.*/=/' \
+    | sort -u > dalfox_targets.txt
 
-    final_count=$(wc -l < final.txt)
+    final_count=$(wc -l < dalfox_targets.txt)
+    echo -e "${yellow}[+]${green} $final_count URLs ready for Dalfox saved in dalfox_targets.txt${reset}"
 
-    echo -e "${yellow}[+]${green} $final_count URLs ready for Dalfox saved in final.txt${reset}"
 else
     echo -e "${red}[-] No reflected parameters found.${reset}"
 fi
 
-echo ""
-
-if [[ -s final.txt ]]; then
+if [[ -s dalfox_targets.txt ]]; then
     echo -e "${yellow}[+]${green} Starting Dalfox...${reset}"
-    dalfox file final.txt -o dalfox_results.txt --silence
+    dalfox file dalfox_targets.txt -o dalfox_results.txt --silence
 else
     echo -e "${red}[-] No Dalfox targets found.${reset}"
     exit 0
@@ -159,11 +159,11 @@ echo ""
 summary=$(figlet -f script "Summary")
 echo -e "${red}$summary${reset}"
 echo ""
-echo -e "${yellow}way.txt${reset} ---> ${green}contain $count1 gathered urls from waybackurls${reset}"
+echo -e "${yellow}wayback_urls.txt${reset} ---> ${green}contain $count1 gathered urls from waybackurls${reset}"
 echo -e "${yellow}gau.txt${reset} ---> ${green}contain $count2 gathered urls from gau${reset}"
 echo -e "${yellow}katana.txt${reset} ---> ${green}contain $count3 gathered urls from katana${reset}"
 echo -e "${yellow}all_urls.txt${reset} ---> ${green}contain $count4 unique URLs from waybackurls and gau${reset}"
-echo -e "${yellow}live_allurls.txt${reset} ---> ${green}contain $live_count live urls from all gathered urls${reset}"
-echo -e "${yellow}final.txt${reset} ---> ${green}contains $final_count Dalfox-ready URLs${reset}"
+echo -e "${yellow}final_live_urls.txt${reset} ---> ${green}contain $live_count live urls from all gathered urls${reset}"
+echo -e "${yellow}dalfox_targets.txt${reset} ---> ${green}contains $final_count Dalfox-ready URLs${reset}"
 
 echo ""
